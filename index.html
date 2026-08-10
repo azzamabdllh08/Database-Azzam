@@ -1,42 +1,302 @@
 <!doctype html>
 <html lang="id">
+
 <head>
+
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+
 <title>Site Verification Dashboard</title>
+
+<!-- ============================================================
+     LOGIN PROTECTION
+     ============================================================ -->
+
+<script>
+(function () {
+
+  const authenticated =
+    sessionStorage.getItem("dashboard_authenticated");
+
+  if (authenticated !== "true") {
+    window.location.replace("login.html");
+  }
+
+})();
+</script>
+
+
+<!-- ============================================================
+     DASHBOARD CSS & DATA
+     ============================================================ -->
+
 <link rel="stylesheet" href="style.css">
+
 <script src="config.js"></script>
 <script src="data.js"></script>
+
 </head>
+
+
 <body>
-<header><div class="brand">▣ <span id="brand">Asset & Project</span></div><div class="title" id="title"></div><a id="source" target="_blank" class="source">OneDrive</a></header>
+
+
+<!-- ============================================================
+     HEADER
+     ============================================================ -->
+
+<header>
+
+  <div class="brand">
+    ▣ <span id="brand">Asset & Project</span>
+  </div>
+
+  <div class="title" id="title"></div>
+
+  <a
+    id="source"
+    target="_blank"
+    rel="noopener noreferrer"
+    class="source">
+    OneDrive
+  </a>
+
+</header>
+
+
+<!-- ============================================================
+     NAVIGATION
+     ============================================================ -->
+
 <nav>
-<button class="active" data-page="dashboard">Dashboard</button>
-<button data-page="sites">Sites</button>
-<button data-page="assets">Assets</button>
-<button data-page="progress">Progress</button>
+
+  <button
+    class="active"
+    data-page="dashboard">
+    Dashboard
+  </button>
+
+  <button
+    data-page="sites">
+    Sites
+  </button>
+
+  <button
+    data-page="assets">
+    Assets
+  </button>
+
+  <button
+    data-page="progress">
+    Progress
+  </button>
+
 </nav>
+
+
+<!-- ============================================================
+     MAIN DASHBOARD
+     ============================================================ -->
+
 <main>
-<section id="dashboard" class="page active">
+
+
+<!-- ============================================================
+     DASHBOARD
+     ============================================================ -->
+
+<section
+  id="dashboard"
+  class="page active">
+
   <div class="cards">
-    <div class="card blue"><b id="total">0</b><span>Total Asset</span></div>
-    <div class="card yellow"><b id="surveyed">0</b><span>Surveyed</span></div>
-    <div class="card green"><b id="coverage">0%</b><span>Coverage</span></div>
-    <div class="card cyan"><b id="missing">0</b><span>Tidak Ada</span></div>
+
+    <div class="card blue">
+      <b id="total">0</b>
+      <span>Total Asset</span>
+    </div>
+
+    <div class="card yellow">
+      <b id="surveyed">0</b>
+      <span>Surveyed</span>
+    </div>
+
+    <div class="card green">
+      <b id="coverage">0%</b>
+      <span>Coverage</span>
+    </div>
+
+    <div class="card cyan">
+      <b id="missing">0</b>
+      <span>Tidak Ada</span>
+    </div>
+
   </div>
+
+
   <div class="grid">
-    <div class="panel"><h3>Asset by Site</h3><div id="siteChart"></div></div>
-    <div class="panel"><h3>Survey Status</h3><div id="donut"></div></div>
-    <div class="panel"><h3>Surveyed by Category</h3><div id="catChart"></div></div>
-    <div class="panel"><h3>Survey Trend by Year</h3><div id="yearChart"></div></div>
+
+    <div class="panel">
+      <h3>Asset by Site</h3>
+      <div id="siteChart"></div>
+    </div>
+
+
+    <div class="panel">
+      <h3>Survey Status</h3>
+      <div id="donut"></div>
+    </div>
+
+
+    <div class="panel">
+      <h3>Surveyed by Category</h3>
+      <div id="catChart"></div>
+    </div>
+
+
+    <div class="panel">
+      <h3>Survey Trend by Year</h3>
+      <div id="yearChart"></div>
+    </div>
+
   </div>
+
 </section>
-<section id="sites" class="page"><div class="panel"><h3>Site Summary</h3><div id="siteTable"></div></div></section>
-<section id="assets" class="page"><div class="panel">
-<h3>Asset Detail</h3>
-<div class="filters"><select id="siteFilter"><option value="">All Sites</option></select><select id="catFilter"><option value="">All Categories</option></select><input id="q" placeholder="Search Tag No / Description"></div>
-<div id="assetTable"></div></div></section>
-<section id="progress" class="page"><div class="panel"><h3>Progress</h3><div id="progress"></div></div></section>
+
+
+<!-- ============================================================
+     SITES
+     ============================================================ -->
+
+<section
+  id="sites"
+  class="page">
+
+  <div class="panel">
+
+    <h3>Site Summary</h3>
+
+    <div id="siteTable"></div>
+
+  </div>
+
+</section>
+
+
+<!-- ============================================================
+     ASSETS
+     ============================================================ -->
+
+<section
+  id="assets"
+  class="page">
+
+  <div class="panel">
+
+    <h3>Asset Detail</h3>
+
+
+    <div class="filters">
+
+      <select id="siteFilter">
+        <option value="">
+          All Sites
+        </option>
+      </select>
+
+
+      <select id="catFilter">
+        <option value="">
+          All Categories
+        </option>
+      </select>
+
+
+      <input
+        id="q"
+        placeholder="Search Tag No / Description">
+
+    </div>
+
+
+    <div id="assetTable"></div>
+
+  </div>
+
+</section>
+
+
+<!-- ============================================================
+     PROGRESS
+     ============================================================ -->
+
+<section
+  id="progress"
+  class="page">
+
+  <div class="panel">
+
+    <h3>Progress</h3>
+
+    <div id="progress"></div>
+
+  </div>
+
+</section>
+
+
 </main>
+
+
+<!-- ============================================================
+     DASHBOARD JAVASCRIPT
+     ============================================================ -->
+
 <script src="app.js"></script>
-</body></html>
+
+
+<!-- ============================================================
+     LOGOUT BUTTON
+     ============================================================ -->
+
+<script>
+
+(function () {
+
+  const logout = document.createElement("button");
+
+  logout.textContent = "Logout";
+
+  logout.style.position = "fixed";
+  logout.style.right = "20px";
+  logout.style.bottom = "20px";
+  logout.style.padding = "10px 16px";
+  logout.style.border = "none";
+  logout.style.borderRadius = "8px";
+  logout.style.background = "#dc2626";
+  logout.style.color = "white";
+  logout.style.fontWeight = "bold";
+  logout.style.cursor = "pointer";
+  logout.style.zIndex = "9999";
+
+  logout.onclick = function () {
+
+    sessionStorage.removeItem(
+      "dashboard_authenticated"
+    );
+
+    window.location.replace(
+      "login.html"
+    );
+
+  };
+
+  document.body.appendChild(logout);
+
+})();
+
+</script>
+
+
+</body>
+</html>
