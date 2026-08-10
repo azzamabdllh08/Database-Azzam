@@ -9,11 +9,14 @@ jobs:
 
     steps:
 
+      # ============================================================
+      # 1. CHECKOUT REPOSITORY
+      # ============================================================
       - name: Checkout repository
         uses: actions/checkout@v4
 
       # ============================================================
-      # 1. GET MICROSOFT GRAPH TOKEN
+      # 2. GET MICROSOFT GRAPH TOKEN
       # ============================================================
       - name: Get Microsoft Graph token
         env:
@@ -24,7 +27,9 @@ jobs:
         run: |
           set -e
 
-          echo "Requesting Microsoft Graph token..."
+          echo "======================================"
+          echo "GET MICROSOFT GRAPH TOKEN"
+          echo "======================================"
 
           RESPONSE=$(curl -sS -X POST \
             "https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token" \
@@ -34,19 +39,79 @@ jobs:
             --data-urlencode "scope=https://graph.microsoft.com/.default" \
             --data-urlencode "grant_type=client_credentials")
 
-          TOKEN=$(python -c "import json,sys; print(json.load(sys.stdin)['access_token'])" <<< "$RESPONSE")
+          echo "Token response received."
+
+          TOKEN=$(python -c "import json,sys; print(json.load(sys.stdin).get('access_token',''))" <<< "$RESPONSE")
 
           if [ -z "$TOKEN" ]; then
-            echo "Failed to obtain Microsoft Graph token."
+            echo "ERROR: Microsoft Graph token gagal diperoleh."
+            echo "$RESPONSE"
             exit 1
           fi
 
           echo "TOKEN=$TOKEN" >> "$GITHUB_ENV"
 
-          echo "Microsoft Graph token obtained successfully."
+          echo "Microsoft Graph token: OK"
+
 
       # ============================================================
-      # 2. SEARCH EXCEL FILE
+      # 3. CHECK ONEDRIVE
+      # ============================================================
+      - name: Check OneDrive
+        run: |
+          set -e
+
+          USER="azzam.abdullah@pttmg.com"
+
+          echo "======================================"
+          echo "CHECK ONEDRIVE"
+          echo "======================================"
+
+          echo "User:"
+          echo "$USER"
+
+          echo ""
+          echo "Requesting OneDrive information..."
+
+          HTTP_CODE=$(curl -sS \
+            -o drive_response.json \
+            -w "%{http_code}" \
+            -H "Authorization: Bearer ${TOKEN}" \
+            "https://graph.microsoft.com/v1.0/users/${USER}/drive")
+
+          echo ""
+          echo "HTTP STATUS: $HTTP_CODE"
+
+          echo ""
+          echo "GRAPH RESPONSE:"
+          cat drive_response.json
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo ""
+            echo "ERROR: OneDrive tidak dapat diakses."
+            exit 1
+          fi
+
+          python - <<'PY'
+          import json
+
+          with open("drive_response.json", "r", encoding="utf-8") as f:
+              data = json.load(f)
+
+          print("")
+          print("======================================")
+          print("ONEDRIVE INFORMATION")
+          print("======================================")
+          print("Drive ID   :", data.get("id"))
+          print("Drive Type :", data.get("driveType"))
+          print("Drive Name :", data.get("name"))
+          print("Owner      :", data.get("owner"))
+          print("======================================")
+          PY
+
+
+      # ============================================================
+      # 4. SEARCH EXCEL FILE
       # ============================================================
       - name: Find Excel file in OneDrive
         run: |
@@ -55,18 +120,36 @@ jobs:
           USER="azzam.abdullah@pttmg.com"
           FILE_NAME="Site_Verification_PowerBI_Ready.xlsx"
 
-          echo "Searching OneDrive for:"
+          echo "======================================"
+          echo "SEARCH EXCEL FILE"
+          echo "======================================"
+
+          echo "File:"
           echo "$FILE_NAME"
 
           SEARCH_URL="https://graph.microsoft.com/v1.0/users/${USER}/drive/root/search(q='${FILE_NAME}')"
 
-          RESPONSE=$(curl -sS --fail-with-body \
+          echo ""
+          echo "Searching..."
+
+          HTTP_CODE=$(curl -sS \
+            -o search_result.json \
+            -w "%{http_code}" \
             -H "Authorization: Bearer ${TOKEN}" \
             "$SEARCH_URL")
 
-          echo "Search response received."
+          echo ""
+          echo "HTTP STATUS: $HTTP_CODE"
 
-          echo "$RESPONSE" > search_result.json
+          echo ""
+          echo "SEARCH RESPONSE:"
+          cat search_result.json
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo ""
+            echo "ERROR: Search OneDrive gagal."
+            exit 1
+          fi
 
           python - <<'PY'
           import json
@@ -77,36 +160,55 @@ jobs:
 
           items = data.get("value", [])
 
+          print("")
+          print("======================================")
+          print("SEARCH RESULT")
+          print("======================================")
+
+          print("Jumlah hasil:", len(items))
+
           if not items:
-              print("ERROR: Excel file tidak ditemukan di OneDrive.")
+              print("")
+              print("ERROR: File Excel tidak ditemukan.")
+              print("")
+              print("Pastikan nama file adalah:")
+              print("Site_Verification_PowerBI_Ready.xlsx")
               sys.exit(1)
 
           target = None
 
           for item in items:
-              name = item.get("name", "")
-              print("Found:", name)
+              print("")
+              print("Name :", item.get("name"))
+              print("ID   :", item.get("id"))
+              print("Path :", item.get("parentReference", {}).get("path"))
 
-              if name.lower() == "site_verification_powerbi_ready.xlsx":
+              if item.get("name", "").lower() == "site_verification_powerbi_ready.xlsx":
                   target = item
-                  break
 
           if target is None:
-              print("ERROR: File dengan nama yang tepat tidak ditemukan.")
+              print("")
+              print("ERROR: File dengan nama tepat tidak ditemukan.")
               sys.exit(1)
 
           item_id = target["id"]
 
-          print("Excel ditemukan.")
-          print("File name:", target.get("name"))
-          print("File ID:", item_id)
+          print("")
+          print("======================================")
+          print("TARGET FILE FOUND")
+          print("======================================")
+          print("Name:", target.get("name"))
+          print("ID  :", item_id)
 
           with open("excel_item_id.txt", "w", encoding="utf-8") as f:
               f.write(item_id)
+
+          print("======================================")
           PY
 
+
       # ============================================================
-      # 3. DOWNLOAD EXCEL
+      # 5. DOWNLOAD EXCEL
       # ============================================================
       - name: Download Excel from OneDrive
         run: |
@@ -115,39 +217,70 @@ jobs:
           USER="azzam.abdullah@pttmg.com"
           ITEM_ID=$(cat excel_item_id.txt)
 
-          echo "Downloading Excel using Drive Item ID..."
+          echo "======================================"
+          echo "DOWNLOAD EXCEL"
+          echo "======================================"
+
+          echo "Item ID:"
+          echo "$ITEM_ID"
 
           curl -L --fail --retry 3 \
             -H "Authorization: Bearer ${TOKEN}" \
             "https://graph.microsoft.com/v1.0/users/${USER}/drive/items/${ITEM_ID}/content" \
             -o source.xlsx
 
+          echo ""
           echo "Download completed."
 
+          echo ""
+          echo "FILE INFORMATION:"
           ls -lh source.xlsx
-
           file source.xlsx
 
+
       # ============================================================
-      # 4. INSTALL PYTHON DEPENDENCY
+      # 6. INSTALL PYTHON
       # ============================================================
       - name: Install Python dependency
         run: |
+          set -e
+
+          python --version
+
           python -m pip install --upgrade pip
+
           pip install openpyxl
 
+
       # ============================================================
-      # 5. GENERATE DASHBOARD DATA
+      # 7. GENERATE DASHBOARD DATA
       # ============================================================
       - name: Generate dashboard data
         run: |
+          set -e
+
+          echo "======================================"
+          echo "GENERATE DASHBOARD DATA"
+          echo "======================================"
+
           python sync_excel.py
 
+          echo ""
+          echo "Generated data.js:"
+          ls -lh data.js
+
+
       # ============================================================
-      # 6. COMMIT UPDATED DATA
+      # 8. COMMIT UPDATED DATA
       # ============================================================
       - name: Commit updated data
         run: |
+          set -e
+
+          echo "======================================"
+          echo "COMMIT UPDATED DATA"
+          echo "======================================"
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
@@ -159,3 +292,7 @@ jobs:
             git commit -m "Update dashboard data"
             git push
           fi
+
+          echo "======================================"
+          echo "SYNC COMPLETED"
+          echo "======================================"
