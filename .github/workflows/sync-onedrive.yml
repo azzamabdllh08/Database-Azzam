@@ -28,7 +28,7 @@ jobs:
         run: |
           set -e
 
-          echo "Getting Microsoft Graph token..."
+          echo "Requesting Microsoft Graph token..."
 
           RESPONSE=$(curl -sS -X POST \
             "https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token" \
@@ -38,153 +38,109 @@ jobs:
             --data-urlencode "scope=https://graph.microsoft.com/.default" \
             --data-urlencode "grant_type=client_credentials")
 
-          TOKEN=$(python -c "import json,sys; print(json.load(sys.stdin).get('access_token',''))" <<< "$RESPONSE")
+          TOKEN=$(python -c "import json,sys; print(json.load(sys.stdin)['access_token'])" <<< "$RESPONSE")
 
           if [ -z "$TOKEN" ]; then
             echo "ERROR: Failed to obtain Microsoft Graph token."
-            echo "$RESPONSE"
             exit 1
           fi
 
-          echo "TOKEN=$TOKEN" >> "$GITHUB_ENV"
+          echo "TOKEN=${TOKEN}" >> "$GITHUB_ENV"
 
-          echo "Graph token: OK"
+          echo "Microsoft Graph token obtained successfully."
 
 
       # ============================================================
-      # 3. GET ONEDRIVE
+      # 3. GET USER ONEDRIVE / DRIVE ID
       # ============================================================
       - name: Get OneDrive
         env:
-          USER_OBJECT_ID: b9083e78-c261-47fd-8620-6323689b589c
+          USER_ID: b9083e78-c261-47fd-8620-6323689b589c
 
         run: |
           set -e
 
-          echo "Getting OneDrive..."
+          echo "Getting OneDrive for user:"
+          echo "${USER_ID}"
 
-          curl -sS --fail-with-body \
+          RESPONSE=$(curl -sS \
             -H "Authorization: Bearer ${TOKEN}" \
-            "https://graph.microsoft.com/v1.0/users/${USER_OBJECT_ID}/drive" \
-            -o drive.json
+            "https://graph.microsoft.com/v1.0/users/${USER_ID}/drive")
 
-          echo "OneDrive response:"
-          cat drive.json
+          echo "Graph response:"
+          echo "$RESPONSE"
 
-          python - <<'PY'
-          import json
+          DRIVE_ID=$(python -c "import json,sys; print(json.load(sys.stdin).get('id',''))" <<< "$RESPONSE")
 
-          with open("drive.json", "r", encoding="utf-8") as f:
-              data = json.load(f)
+          if [ -z "$DRIVE_ID" ]; then
+            echo "ERROR: Drive ID was not found."
+            exit 1
+          fi
 
-          print("")
-          print("======================================")
-          print("ONEDRIVE FOUND")
-          print("======================================")
-          print("Drive ID   :", data.get("id"))
-          print("Drive Type :", data.get("driveType"))
-          print("Drive Name :", data.get("name"))
-          print("======================================")
-          PY
+          echo "DRIVE_ID=${DRIVE_ID}" >> "$GITHUB_ENV"
+
+          echo "OneDrive found successfully."
+          echo "Drive ID: ${DRIVE_ID}"
 
 
       # ============================================================
-      # 4. SEARCH EXCEL
+      # 4. FIND EXCEL FILE
       # ============================================================
       - name: Find Excel file
-        env:
-          USER_OBJECT_ID: b9083e78-c261-47fd-8620-6323689b589c
-
         run: |
           set -e
 
-          FILE_NAME="Site_Verification_PowerBI_Ready.xlsx"
+          FILE_PATH="Zona 13/Asset Register & Verifikasi/Dashboard/Site_Verification_PowerBI_Ready.xlsx"
 
           echo "Searching for:"
-          echo "$FILE_NAME"
+          echo "$FILE_PATH"
 
-          curl -sS --fail-with-body \
+          ENCODED_PATH=$(python -c "import urllib.parse; print(urllib.parse.quote('''${FILE_PATH}''', safe='/'))")
+
+          echo "Encoded path:"
+          echo "$ENCODED_PATH"
+
+          RESPONSE=$(curl -sS \
             -H "Authorization: Bearer ${TOKEN}" \
-            "https://graph.microsoft.com/v1.0/users/${USER_OBJECT_ID}/drive/root/search(q='${FILE_NAME}')" \
-            -o search.json
+            "https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/root:/${ENCODED_PATH}")
 
-          echo ""
-          echo "Search result:"
-          cat search.json
+          echo "Graph response:"
+          echo "$RESPONSE"
 
-          python - <<'PY'
-          import json
-          import sys
+          ITEM_ID=$(python -c "import json,sys; print(json.load(sys.stdin).get('id',''))" <<< "$RESPONSE")
 
-          with open("search.json", "r", encoding="utf-8") as f:
-              data = json.load(f)
+          if [ -z "$ITEM_ID" ]; then
+            echo "ERROR: Excel file was not found."
+            exit 1
+          fi
 
-          items = data.get("value", [])
+          echo "ITEM_ID=${ITEM_ID}" >> "$GITHUB_ENV"
 
-          print("")
-          print("======================================")
-          print("SEARCH RESULTS")
-          print("======================================")
-
-          print("Found:", len(items), "item(s)")
-
-          target = None
-
-          for item in items:
-              print("")
-              print("Name:", item.get("name"))
-              print("ID:", item.get("id"))
-              print("Path:", item.get("parentReference", {}).get("path"))
-
-              if item.get("name", "").lower() == \
-                 "site_verification_powerbi_ready.xlsx":
-                  target = item
-
-          if target is None:
-              print("")
-              print("ERROR: Site_Verification_PowerBI_Ready.xlsx tidak ditemukan.")
-              sys.exit(1)
-
-          with open("excel_item_id.txt", "w", encoding="utf-8") as f:
-              f.write(target["id"])
-
-          print("")
-          print("======================================")
-          print("EXCEL FOUND")
-          print("======================================")
-          print("File:", target["name"])
-          print("ID  :", target["id"])
-          PY
+          echo "Excel file found successfully."
+          echo "Item ID: ${ITEM_ID}"
 
 
       # ============================================================
       # 5. DOWNLOAD EXCEL
       # ============================================================
       - name: Download Excel
-        env:
-          USER_OBJECT_ID: b9083e78-c261-47fd-8620-6323689b589c
-
         run: |
           set -e
 
-          ITEM_ID=$(cat excel_item_id.txt)
-
           echo "Downloading Excel..."
-          echo "Item ID: $ITEM_ID"
 
           curl -L --fail --retry 3 \
             -H "Authorization: Bearer ${TOKEN}" \
-            "https://graph.microsoft.com/v1.0/users/${USER_OBJECT_ID}/drive/items/${ITEM_ID}/content" \
+            "https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${ITEM_ID}/content" \
             -o source.xlsx
 
-          echo ""
           echo "Download completed."
 
           ls -lh source.xlsx
 
 
       # ============================================================
-      # 6. INSTALL PYTHON DEPENDENCY
+      # 6. INSTALL PYTHON
       # ============================================================
       - name: Install Python dependency
         run: |
@@ -193,28 +149,21 @@ jobs:
 
 
       # ============================================================
-      # 7. GENERATE DATA.JS
+      # 7. GENERATE DASHBOARD DATA
       # ============================================================
       - name: Generate dashboard data
         run: |
-          set -e
-
-          echo "Running sync_excel.py..."
-
           python sync_excel.py
 
-          echo ""
           echo "Generated data.js:"
           ls -lh data.js
 
 
       # ============================================================
-      # 8. COMMIT DATA.JS
+      # 8. COMMIT UPDATED DATA
       # ============================================================
       - name: Commit updated data
         run: |
-          set -e
-
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
@@ -226,6 +175,3 @@ jobs:
             git commit -m "Update dashboard data"
             git push
           fi
-
-          echo ""
-          echo "SYNC COMPLETED SUCCESSFULLY"
