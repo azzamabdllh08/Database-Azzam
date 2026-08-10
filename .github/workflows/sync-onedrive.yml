@@ -3,6 +3,9 @@ name: Sync Excel from OneDrive
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -10,14 +13,17 @@ jobs:
     steps:
 
       # ============================================================
-      # 1. CHECKOUT
+      # 1. CHECKOUT REPOSITORY
       # ============================================================
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: true
 
 
       # ============================================================
-      # 2. GET ACCESS TOKEN FROM REFRESH TOKEN
+      # 2. GET MICROSOFT GRAPH ACCESS TOKEN
+      #    Menggunakan Refresh Token OneDrive Personal
       # ============================================================
       - name: Get Microsoft Graph token
         env:
@@ -27,7 +33,9 @@ jobs:
         run: |
           set -e
 
-          echo "Getting Microsoft Graph access token..."
+          echo "=========================================="
+          echo "GET MICROSOFT GRAPH ACCESS TOKEN"
+          echo "=========================================="
 
           RESPONSE=$(curl -sS -X POST \
             "https://login.microsoftonline.com/consumers/oauth2/v2.0/token" \
@@ -37,18 +45,21 @@ jobs:
             --data-urlencode "refresh_token=${REFRESH_TOKEN}" \
             --data-urlencode "grant_type=refresh_token")
 
-          echo "$RESPONSE" | python -c "
+          ERROR=$(echo "$RESPONSE" | python -c "
           import json,sys
-          data=json.load(sys.stdin)
-          if 'error' in data:
-              print('ERROR:', data)
-              sys.exit(1)
-          print('Token obtained successfully.')
-          "
+          d=json.load(sys.stdin)
+          print(d.get('error',''))
+          ")
+
+          if [ -n "$ERROR" ]; then
+            echo "ERROR: Microsoft token request failed."
+            echo "$RESPONSE" | python -m json.tool
+            exit 1
+          fi
 
           TOKEN=$(echo "$RESPONSE" | python -c "
           import json,sys
-          print(json.load(sys.stdin)['access_token'])
+          print(json.load(sys.stdin).get('access_token',''))
           ")
 
           if [ -z "$TOKEN" ]; then
@@ -58,40 +69,51 @@ jobs:
 
           echo "TOKEN=${TOKEN}" >> "$GITHUB_ENV"
 
-          echo "Microsoft Graph token obtained successfully."
+          echo "Microsoft Graph access token obtained successfully."
 
 
       # ============================================================
-      # 3. GET MY PERSONAL ONEDRIVE
+      # 3. GET PERSONAL ONEDRIVE
       # ============================================================
       - name: Get OneDrive
         run: |
           set -e
 
-          echo "Getting personal OneDrive..."
+          echo "=========================================="
+          echo "GET PERSONAL ONEDRIVE"
+          echo "=========================================="
 
           RESPONSE=$(curl -sS \
             -H "Authorization: Bearer ${TOKEN}" \
             "https://graph.microsoft.com/v1.0/me/drive")
 
-          echo "Graph response:"
-          echo "$RESPONSE"
+          echo "$RESPONSE" | python -m json.tool
+
+          ERROR=$(echo "$RESPONSE" | python -c "
+          import json,sys
+          d=json.load(sys.stdin)
+          print(d.get('error',{}).get('message',''))
+          ")
+
+          if [ -n "$ERROR" ]; then
+            echo "ERROR: Failed to access OneDrive."
+            echo "$ERROR"
+            exit 1
+          fi
 
           DRIVE_ID=$(echo "$RESPONSE" | python -c "
           import json,sys
-          data=json.load(sys.stdin)
-          print(data.get('id',''))
+          print(json.load(sys.stdin).get('id',''))
           ")
 
           if [ -z "$DRIVE_ID" ]; then
-            echo "ERROR: Drive ID was not found."
+            echo "ERROR: OneDrive Drive ID was not found."
             exit 1
           fi
 
           echo "DRIVE_ID=${DRIVE_ID}" >> "$GITHUB_ENV"
 
-          echo "Personal OneDrive found successfully."
-          echo "Drive ID: ${DRIVE_ID}"
+          echo "OneDrive found successfully."
 
 
       # ============================================================
@@ -101,9 +123,13 @@ jobs:
         run: |
           set -e
 
+          echo "=========================================="
+          echo "FIND EXCEL FILE"
+          echo "=========================================="
+
           FILE_PATH="Zona 13/Asset Register & Verifikasi/Dashboard/Site_Verification_PowerBI_Ready.xlsx"
 
-          echo "Searching for:"
+          echo "File path:"
           echo "$FILE_PATH"
 
           ENCODED_PATH=$(python -c "
@@ -111,31 +137,37 @@ jobs:
           print(urllib.parse.quote('''${FILE_PATH}''', safe='/'))
           ")
 
-          echo "Encoded path:"
-          echo "$ENCODED_PATH"
-
           RESPONSE=$(curl -sS \
             -H "Authorization: Bearer ${TOKEN}" \
             "https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/root:/${ENCODED_PATH}")
 
-          echo "Graph response:"
-          echo "$RESPONSE"
+          echo "$RESPONSE" | python -m json.tool
+
+          ERROR=$(echo "$RESPONSE" | python -c "
+          import json,sys
+          d=json.load(sys.stdin)
+          print(d.get('error',{}).get('message',''))
+          ")
+
+          if [ -n "$ERROR" ]; then
+            echo "ERROR: Excel file could not be found."
+            echo "$ERROR"
+            exit 1
+          fi
 
           ITEM_ID=$(echo "$RESPONSE" | python -c "
           import json,sys
-          data=json.load(sys.stdin)
-          print(data.get('id',''))
+          print(json.load(sys.stdin).get('id',''))
           ")
 
           if [ -z "$ITEM_ID" ]; then
-            echo "ERROR: Excel file was not found."
+            echo "ERROR: Excel Item ID was not found."
             exit 1
           fi
 
           echo "ITEM_ID=${ITEM_ID}" >> "$GITHUB_ENV"
 
           echo "Excel file found successfully."
-          echo "Item ID: ${ITEM_ID}"
 
 
       # ============================================================
@@ -145,14 +177,21 @@ jobs:
         run: |
           set -e
 
-          echo "Downloading Excel..."
+          echo "=========================================="
+          echo "DOWNLOAD EXCEL"
+          echo "=========================================="
 
           curl -L --fail --retry 3 \
             -H "Authorization: Bearer ${TOKEN}" \
             "https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${ITEM_ID}/content" \
             -o source.xlsx
 
-          echo "Download completed."
+          if [ ! -f source.xlsx ]; then
+            echo "ERROR: source.xlsx was not created."
+            exit 1
+          fi
+
+          echo "Excel download completed."
 
           ls -lh source.xlsx
 
@@ -162,8 +201,16 @@ jobs:
       # ============================================================
       - name: Install Python dependency
         run: |
+          set -e
+
+          echo "=========================================="
+          echo "INSTALL PYTHON DEPENDENCY"
+          echo "=========================================="
+
           python -m pip install --upgrade pip
           pip install openpyxl
+
+          echo "Python dependencies installed."
 
 
       # ============================================================
@@ -171,25 +218,56 @@ jobs:
       # ============================================================
       - name: Generate dashboard data
         run: |
+          set -e
+
+          echo "=========================================="
+          echo "GENERATE DASHBOARD DATA"
+          echo "=========================================="
+
+          if [ ! -f sync_excel.py ]; then
+            echo "ERROR: sync_excel.py not found."
+            exit 1
+          fi
+
           python sync_excel.py
 
-          echo "Generated data.js:"
+          if [ ! -f data.js ]; then
+            echo "ERROR: data.js was not generated."
+            exit 1
+          fi
+
+          echo "Dashboard data generated successfully."
+
           ls -lh data.js
 
 
       # ============================================================
-      # 8. COMMIT UPDATED DATA
+      # 8. COMMIT AND PUSH UPDATED DATA
       # ============================================================
       - name: Commit updated data
         run: |
+          set -e
+
+          echo "=========================================="
+          echo "COMMIT AND PUSH UPDATED DATA"
+          echo "=========================================="
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add data.js
 
           if git diff --cached --quiet; then
-            echo "No changes detected."
-          else
-            git commit -m "Update dashboard data"
-            git push
+            echo "No changes detected in data.js."
+            exit 0
           fi
+
+          git commit -m "Update dashboard data"
+
+          echo "Pushing changes to main..."
+
+          git push origin HEAD:main
+
+          echo "=========================================="
+          echo "SYNC COMPLETED SUCCESSFULLY"
+          echo "=========================================="
