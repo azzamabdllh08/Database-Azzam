@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RBI Dashboard | Asset & Project</title>
+<link rel="stylesheet" href="style.css">
+<script src="config.js"></script>
+<script src="data.js"></script>
+</head>
+<body>
+<div class="app">
+<header class="topbar">
+  <div class="brand">
+    <div class="logo-mark">P</div>
+    <div><div class="brand-name">Asset & Project</div><div class="brand-sub">Risk Based Inspection</div></div>
+  </div>
+  <div class="title-block"><div class="eyebrow">INTEGRITY MANAGEMENT</div><h1 id="title">RBI DASHBOARD</h1></div>
+  <div class="actions"><a id="report" class="btn ghost" target="_blank" rel="noopener noreferrer">Report</a><button id="refresh" class="btn">Refresh</button></div>
+</header>
+<nav class="nav">
+  <button class="active" data-page="overview">Overview</button>
+  <button data-page="risk">Risk</button>
+  <button data-page="inspection">Inspection</button>
+  <button data-page="damage">Damage Mechanism</button>
+  <button data-page="assets">Assets</button>
+</nav>
+<main>
+<section id="overview" class="page active">
+  <div class="hero"><div><div class="eyebrow">RBI PORTFOLIO</div><h2>Asset integrity at a glance</h2><p>Dashboard membaca hasil assessment RBI dari database Excel dan menampilkan risk, criticality, RLI, inspection due date, serta potential damage mechanism.</p></div><div class="sync-box"><span>Source</span><b id="sourceName">Input RBI.xlsx</b><small id="lastSync">Data loaded</small></div></div>
+  <div class="cards">
+    <div class="card"><span>Total Asset</span><b id="total">0</b><small>RBI assessed</small></div>
+    <div class="card"><span>Unsatisfactory</span><b id="unsat">0</b><small>Criticality 1AP</small></div>
+    <div class="card"><span>Overdue</span><b id="overdue">0</b><small>Inspection due date</small></div>
+    <div class="card"><span>Min RLI</span><b id="minRli">—</b><small>months</small></div>
+  </div>
+  <div class="grid two"><div class="panel"><div class="panel-head"><h3>Criticality 1AP</h3><span class="badge">Current</span></div><div id="criticalityChart" class="bars"></div></div><div class="panel"><div class="panel-head"><h3>Risk 1AP Distribution</h3><span class="badge">Risk</span></div><div id="riskChart" class="risk-bars"></div></div></div>
+  <div class="grid two"><div class="panel"><div class="panel-head"><h3>Potential Damage Mechanism</h3><span class="badge">Internal</span></div><div id="dmChart" class="bars"></div></div><div class="panel"><div class="panel-head"><h3>RLI / Inspection Status</h3><span class="badge">Priority</span></div><div id="dueChart" class="bars"></div></div></div>
+</section>
+<section id="risk" class="page"><div class="page-head"><div><div class="eyebrow">RISK PROFILE</div><h2>Risk Matrix & Criticality</h2></div></div><div class="grid two"><div class="panel"><div class="panel-head"><h3>Risk 1AP Matrix</h3><span class="badge">Exact matrix code</span></div><div id="riskMatrix" class="matrix"></div></div><div class="panel"><div class="panel-head"><h3>Criticality Summary</h3></div><div id="criticalityList" class="list"></div></div></div></section>
+<section id="inspection" class="page"><div class="page-head"><div><div class="eyebrow">INSPECTION PLANNING</div><h2>Inspection Due & RLI</h2></div></div><div class="grid two"><div class="panel"><div class="panel-head"><h3>Inspection Priority</h3></div><div id="inspectionPriority" class="bars"></div></div><div class="panel"><div class="panel-head"><h3>Shortest RLI</h3></div><div id="shortRli" class="list"></div></div></div></section>
+<section id="damage" class="page"><div class="page-head"><div><div class="eyebrow">DAMAGE MECHANISM</div><h2>Potential Damage Mechanisms</h2></div></div><div class="grid two"><div class="panel"><div class="panel-head"><h3>Internal</h3></div><div id="dmInternal" class="bars"></div></div><div class="panel"><div class="panel-head"><h3>External</h3></div><div id="dmExternal" class="bars"></div></div></div></section>
+<section id="assets" class="page"><div class="page-head"><div><div class="eyebrow">RBI REGISTER</div><h2>Asset Detail</h2></div></div><div class="panel"><div class="filters"><select id="systemFilter"><option value="">All Systems</option></select><select id="riskFilter"><option value="">All Risk 1AP</option></select><select id="critFilter"><option value="">All Criticality</option></select><input id="search" placeholder="Search line no / description / material"></div><div id="assetCount" class="note"></div><div class="table-wrap"><table class="table"><thead><tr><th>Line No.</th><th>System</th><th>Material</th><th>Risk 1AP</th><th>Criticality</th><th>RLI (mo)</th><th>Inspection Due</th><th>Damage Mechanism</th></tr></thead><tbody id="assetRows"></tbody></table></div></div></section>
+</main>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
