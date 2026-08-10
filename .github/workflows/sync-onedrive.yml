@@ -17,70 +17,93 @@ jobs:
 
 
       # ============================================================
-      # 2. GET MICROSOFT GRAPH TOKEN
+      # 2. GET DELEGATED MICROSOFT GRAPH TOKEN
       # ============================================================
       - name: Get Microsoft Graph token
         env:
           CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          REFRESH_TOKEN: ${{ secrets.AZURE_REFRESH_TOKEN }}
 
         run: |
           set -e
 
-          echo "Requesting Microsoft Graph token..."
+          echo "Requesting delegated Microsoft Graph token..."
 
           RESPONSE=$(curl -sS -X POST \
-            "https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token" \
+            "https://login.microsoftonline.com/consumers/oauth2/v2.0/token" \
             -H "Content-Type: application/x-www-form-urlencoded" \
             --data-urlencode "client_id=${CLIENT_ID}" \
-            --data-urlencode "client_secret=${CLIENT_SECRET}" \
-            --data-urlencode "scope=https://graph.microsoft.com/.default" \
-            --data-urlencode "grant_type=client_credentials")
+            --data-urlencode "scope=Files.Read offline_access" \
+            --data-urlencode "refresh_token=${REFRESH_TOKEN}" \
+            --data-urlencode "grant_type=refresh_token")
 
-          TOKEN=$(python -c "import json,sys; print(json.load(sys.stdin)['access_token'])" <<< "$RESPONSE")
+          echo "Checking token response..."
+
+          ERROR=$(python -c "
+          import json,sys
+          d=json.load(sys.stdin)
+          print(d.get('error',''))
+          " <<< "$RESPONSE")
+
+          if [ -n "$ERROR" ]; then
+            echo "ERROR: Microsoft token request failed."
+            echo "$RESPONSE"
+            exit 1
+          fi
+
+          TOKEN=$(python -c "
+          import json,sys
+          print(json.load(sys.stdin)['access_token'])
+          " <<< "$RESPONSE")
 
           if [ -z "$TOKEN" ]; then
-            echo "ERROR: Failed to obtain Microsoft Graph token."
+            echo "ERROR: Access token was empty."
             exit 1
           fi
 
           echo "TOKEN=${TOKEN}" >> "$GITHUB_ENV"
 
-          echo "Microsoft Graph token obtained successfully."
+          echo "Microsoft Graph delegated token obtained successfully."
 
 
       # ============================================================
-      # 3. GET USER ONEDRIVE / DRIVE ID
+      # 3. CHECK CURRENT USER ONEDRIVE
       # ============================================================
-      - name: Get OneDrive
-        env:
-          USER_ID: b9083e78-c261-47fd-8620-6323689b589c
-
+      - name: Get My OneDrive
         run: |
           set -e
 
-          echo "Getting OneDrive for user:"
-          echo "${USER_ID}"
+          echo "Getting current user's OneDrive..."
 
-          RESPONSE=$(curl -sS \
+          HTTP_CODE=$(curl -sS \
+            -o drive.json \
+            -w "%{http_code}" \
             -H "Authorization: Bearer ${TOKEN}" \
-            "https://graph.microsoft.com/v1.0/users/${USER_ID}/drive")
+            "https://graph.microsoft.com/v1.0/me/drive")
 
-          echo "Graph response:"
-          echo "$RESPONSE"
+          echo "HTTP STATUS: ${HTTP_CODE}"
 
-          DRIVE_ID=$(python -c "import json,sys; print(json.load(sys.stdin).get('id',''))" <<< "$RESPONSE")
+          cat drive.json
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "ERROR: Unable to access OneDrive."
+            exit 1
+          fi
+
+          DRIVE_ID=$(python -c "
+          import json
+          d=json.load(open('drive.json'))
+          print(d.get('id',''))
+          ")
 
           if [ -z "$DRIVE_ID" ]; then
-            echo "ERROR: Drive ID was not found."
+            echo "ERROR: Drive ID not found."
             exit 1
           fi
 
           echo "DRIVE_ID=${DRIVE_ID}" >> "$GITHUB_ENV"
 
           echo "OneDrive found successfully."
-          echo "Drive ID: ${DRIVE_ID}"
 
 
       # ============================================================
@@ -92,32 +115,47 @@ jobs:
 
           FILE_PATH="Zona 13/Asset Register & Verifikasi/Dashboard/Site_Verification_PowerBI_Ready.xlsx"
 
-          echo "Searching for:"
+          echo "Searching OneDrive for:"
           echo "$FILE_PATH"
 
-          ENCODED_PATH=$(python -c "import urllib.parse; print(urllib.parse.quote('''${FILE_PATH}''', safe='/'))")
+          ENCODED_PATH=$(python -c "
+          import urllib.parse
+          path='''${FILE_PATH}'''
+          print(urllib.parse.quote(path, safe='/'))
+          ")
 
           echo "Encoded path:"
           echo "$ENCODED_PATH"
 
-          RESPONSE=$(curl -sS \
+          HTTP_CODE=$(curl -sS \
+            -o excel.json \
+            -w "%{http_code}" \
             -H "Authorization: Bearer ${TOKEN}" \
-            "https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/root:/${ENCODED_PATH}")
+            "https://graph.microsoft.com/v1.0/me/drive/root:/${ENCODED_PATH}")
 
-          echo "Graph response:"
-          echo "$RESPONSE"
+          echo "HTTP STATUS: ${HTTP_CODE}"
 
-          ITEM_ID=$(python -c "import json,sys; print(json.load(sys.stdin).get('id',''))" <<< "$RESPONSE")
+          cat excel.json
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "ERROR: Excel file was not found."
+            exit 1
+          fi
+
+          ITEM_ID=$(python -c "
+          import json
+          d=json.load(open('excel.json'))
+          print(d.get('id',''))
+          ")
 
           if [ -z "$ITEM_ID" ]; then
-            echo "ERROR: Excel file was not found."
+            echo "ERROR: Excel ITEM_ID not found."
             exit 1
           fi
 
           echo "ITEM_ID=${ITEM_ID}" >> "$GITHUB_ENV"
 
           echo "Excel file found successfully."
-          echo "Item ID: ${ITEM_ID}"
 
 
       # ============================================================
@@ -131,7 +169,7 @@ jobs:
 
           curl -L --fail --retry 3 \
             -H "Authorization: Bearer ${TOKEN}" \
-            "https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${ITEM_ID}/content" \
+            "https://graph.microsoft.com/v1.0/me/drive/items/${ITEM_ID}/content" \
             -o source.xlsx
 
           echo "Download completed."
@@ -140,7 +178,7 @@ jobs:
 
 
       # ============================================================
-      # 6. INSTALL PYTHON
+      # 6. INSTALL PYTHON DEPENDENCY
       # ============================================================
       - name: Install Python dependency
         run: |
