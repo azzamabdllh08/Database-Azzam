@@ -8,14 +8,28 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: sync-onedrive
+  cancel-in-progress: true
+
 jobs:
   sync:
     runs-on: ubuntu-latest
 
     steps:
+
+      # ==========================================
+      # 1. CHECKOUT REPOSITORY
+      # ==========================================
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
+
+      # ==========================================
+      # 2. GET MICROSOFT GRAPH ACCESS TOKEN
+      # ==========================================
       - name: Get Microsoft Graph token
         env:
           CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
@@ -26,7 +40,8 @@ jobs:
 
           echo "Requesting Microsoft Graph token..."
 
-          RESPONSE=$(curl -sS -X POST \
+          RESPONSE=$(curl -sS --fail \
+            -X POST \
             "https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token" \
             -H "Content-Type: application/x-www-form-urlencoded" \
             --data-urlencode "client_id=${CLIENT_ID}" \
@@ -41,9 +56,67 @@ jobs:
             exit 1
           fi
 
+          echo "Microsoft Graph token obtained successfully."
+
           echo "TOKEN=$TOKEN" >> "$GITHUB_ENV"
 
+
+      # ==========================================
+      # 3. SEARCH EXCEL FILE IN ONEDRIVE
+      # ==========================================
+      - name: Find Excel file in OneDrive
+        env:
+          TOKEN: ${{ env.TOKEN }}
+        run: |
+          set -e
+
+          FILE_NAME="Site_Verification_PowerBI_Ready.xlsx"
+
+          echo "Searching for ${FILE_NAME}..."
+
+          RESPONSE=$(curl -sS --fail \
+            -H "Authorization: Bearer ${TOKEN}" \
+            "https://graph.microsoft.com/v1.0/users/azzam.abdullah%40pttmg.com/drive/root/search(q='${FILE_NAME}')")
+
+          echo "$RESPONSE" > search.json
+
+          echo "Search completed."
+
+          ITEM_ID=$(python -c "
+          import json
+
+          data = json.load(open('search.json'))
+
+          items = [
+              item for item in data.get('value', [])
+              if item.get('name') == 'Site_Verification_PowerBI_Ready.xlsx'
+          ]
+
+          if items:
+              print(items[0]['id'])
+          ")
+
+          if [ -z "$ITEM_ID" ]; then
+            echo "ERROR: File ${FILE_NAME} was not found in OneDrive."
+            echo ""
+            echo "Graph search response:"
+            cat search.json
+            exit 1
+          fi
+
+          echo "Excel file found."
+          echo "Item ID obtained."
+
+          echo "ITEM_ID=$ITEM_ID" >> "$GITHUB_ENV"
+
+
+      # ==========================================
+      # 4. DOWNLOAD EXCEL USING ITEM ID
+      # ==========================================
       - name: Download Excel from OneDrive
+        env:
+          TOKEN: ${{ env.TOKEN }}
+          ITEM_ID: ${{ env.ITEM_ID }}
         run: |
           set -e
 
@@ -51,31 +124,70 @@ jobs:
 
           curl -L --fail --retry 3 \
             -H "Authorization: Bearer ${TOKEN}" \
-           "https://graph.microsoft.com/v1.0/users/azzam.abdullah%40pttmg.com/drive/root:/Zona%2013/Asset%20Register%20%26%20Verifikasi/Dashboard/Site_Verification_PowerBI_Ready.xlsx:/content" \
+            "https://graph.microsoft.com/v1.0/users/azzam.abdullah%40pttmg.com/drive/items/${ITEM_ID}/content" \
+            -o source.xlsx
 
           echo "Download completed."
 
+          if [ ! -f source.xlsx ]; then
+            echo "ERROR: source.xlsx was not created."
+            exit 1
+          fi
+
+          echo "Downloaded file:"
           ls -lh source.xlsx
 
+
+      # ==========================================
+      # 5. INSTALL PYTHON DEPENDENCY
+      # ==========================================
       - name: Install Python dependency
         run: |
+          set -e
+
           python -m pip install --upgrade pip
           pip install openpyxl
 
+
+      # ==========================================
+      # 6. GENERATE DASHBOARD DATA
+      # ==========================================
       - name: Generate dashboard data
         run: |
+          set -e
+
+          echo "Running sync_excel.py..."
+
           python sync_excel.py
 
+          echo "Dashboard data generated."
+
+          if [ ! -f data.js ]; then
+            echo "ERROR: data.js was not generated."
+            exit 1
+          fi
+
+          ls -lh data.js
+
+
+      # ==========================================
+      # 7. COMMIT UPDATED DATA
+      # ==========================================
       - name: Commit updated data
         run: |
+          set -e
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add data.js
 
           if git diff --cached --quiet; then
-            echo "No changes detected."
+            echo "No changes detected in data.js."
           else
+            echo "Changes detected."
+
             git commit -m "Update dashboard data"
+
             git push
           fi
