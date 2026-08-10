@@ -51,8 +51,7 @@ jobs:
 
           curl -L --fail --retry 3 \
             -H "Authorization: Bearer ${TOKEN}" \
-            "https://graph.microsoft.com/v1.0/users/azzam.abdullah%40pttmg.com/drive/root:/Zona%2013/Asset%20Register%20%26%20Verifikasi/Dashboard/Site_Verification_PowerBI_Ready.xlsx:/content" \
-            -o source.xlsx
+           "https://graph.microsoft.com/v1.0/users/azzam.abdullah%40pttmg.com/drive/root:/Zona%2013/Asset%20Register%20%26%20Verifikasi/Dashboard/Site_Verification_PowerBI_Ready.xlsx:/content" \
 
           echo "Download completed."
 
