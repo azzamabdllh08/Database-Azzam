@@ -15,6 +15,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+
       # ============================================================
       # 2. GET MICROSOFT GRAPH TOKEN
       # ============================================================
@@ -27,9 +28,7 @@ jobs:
         run: |
           set -e
 
-          echo "======================================"
-          echo "GET MICROSOFT GRAPH TOKEN"
-          echo "======================================"
+          echo "Getting Microsoft Graph token..."
 
           RESPONSE=$(curl -sS -X POST \
             "https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token" \
@@ -39,229 +38,168 @@ jobs:
             --data-urlencode "scope=https://graph.microsoft.com/.default" \
             --data-urlencode "grant_type=client_credentials")
 
-          echo "Token response received."
-
           TOKEN=$(python -c "import json,sys; print(json.load(sys.stdin).get('access_token',''))" <<< "$RESPONSE")
 
           if [ -z "$TOKEN" ]; then
-            echo "ERROR: Microsoft Graph token gagal diperoleh."
+            echo "ERROR: Failed to obtain Microsoft Graph token."
             echo "$RESPONSE"
             exit 1
           fi
 
           echo "TOKEN=$TOKEN" >> "$GITHUB_ENV"
 
-          echo "Microsoft Graph token: OK"
+          echo "Graph token: OK"
 
 
       # ============================================================
-      # 3. CHECK ONEDRIVE
+      # 3. GET ONEDRIVE
       # ============================================================
-      - name: Check OneDrive
+      - name: Get OneDrive
+        env:
+          USER_OBJECT_ID: b9083e78-c261-47fd-8620-6323689b589c
+
         run: |
           set -e
 
-          USER="azzam.abdullah@pttmg.com"
+          echo "Getting OneDrive..."
 
-          echo "======================================"
-          echo "CHECK ONEDRIVE"
-          echo "======================================"
-
-          echo "User:"
-          echo "$USER"
-
-          echo ""
-          echo "Requesting OneDrive information..."
-
-          HTTP_CODE=$(curl -sS \
-            -o drive_response.json \
-            -w "%{http_code}" \
+          curl -sS --fail-with-body \
             -H "Authorization: Bearer ${TOKEN}" \
-            "https://graph.microsoft.com/v1.0/users/${USER}/drive")
+            "https://graph.microsoft.com/v1.0/users/${USER_OBJECT_ID}/drive" \
+            -o drive.json
 
-          echo ""
-          echo "HTTP STATUS: $HTTP_CODE"
-
-          echo ""
-          echo "GRAPH RESPONSE:"
-          cat drive_response.json
-
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo ""
-            echo "ERROR: OneDrive tidak dapat diakses."
-            exit 1
-          fi
+          echo "OneDrive response:"
+          cat drive.json
 
           python - <<'PY'
           import json
 
-          with open("drive_response.json", "r", encoding="utf-8") as f:
+          with open("drive.json", "r", encoding="utf-8") as f:
               data = json.load(f)
 
           print("")
           print("======================================")
-          print("ONEDRIVE INFORMATION")
+          print("ONEDRIVE FOUND")
           print("======================================")
           print("Drive ID   :", data.get("id"))
           print("Drive Type :", data.get("driveType"))
           print("Drive Name :", data.get("name"))
-          print("Owner      :", data.get("owner"))
           print("======================================")
           PY
 
 
       # ============================================================
-      # 4. SEARCH EXCEL FILE
+      # 4. SEARCH EXCEL
       # ============================================================
-      - name: Find Excel file in OneDrive
+      - name: Find Excel file
+        env:
+          USER_OBJECT_ID: b9083e78-c261-47fd-8620-6323689b589c
+
         run: |
           set -e
 
-          USER="azzam.abdullah@pttmg.com"
           FILE_NAME="Site_Verification_PowerBI_Ready.xlsx"
 
-          echo "======================================"
-          echo "SEARCH EXCEL FILE"
-          echo "======================================"
-
-          echo "File:"
+          echo "Searching for:"
           echo "$FILE_NAME"
 
-          SEARCH_URL="https://graph.microsoft.com/v1.0/users/${USER}/drive/root/search(q='${FILE_NAME}')"
-
-          echo ""
-          echo "Searching..."
-
-          HTTP_CODE=$(curl -sS \
-            -o search_result.json \
-            -w "%{http_code}" \
+          curl -sS --fail-with-body \
             -H "Authorization: Bearer ${TOKEN}" \
-            "$SEARCH_URL")
+            "https://graph.microsoft.com/v1.0/users/${USER_OBJECT_ID}/drive/root/search(q='${FILE_NAME}')" \
+            -o search.json
 
           echo ""
-          echo "HTTP STATUS: $HTTP_CODE"
-
-          echo ""
-          echo "SEARCH RESPONSE:"
-          cat search_result.json
-
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo ""
-            echo "ERROR: Search OneDrive gagal."
-            exit 1
-          fi
+          echo "Search result:"
+          cat search.json
 
           python - <<'PY'
           import json
           import sys
 
-          with open("search_result.json", "r", encoding="utf-8") as f:
+          with open("search.json", "r", encoding="utf-8") as f:
               data = json.load(f)
 
           items = data.get("value", [])
 
           print("")
           print("======================================")
-          print("SEARCH RESULT")
+          print("SEARCH RESULTS")
           print("======================================")
 
-          print("Jumlah hasil:", len(items))
-
-          if not items:
-              print("")
-              print("ERROR: File Excel tidak ditemukan.")
-              print("")
-              print("Pastikan nama file adalah:")
-              print("Site_Verification_PowerBI_Ready.xlsx")
-              sys.exit(1)
+          print("Found:", len(items), "item(s)")
 
           target = None
 
           for item in items:
               print("")
-              print("Name :", item.get("name"))
-              print("ID   :", item.get("id"))
-              print("Path :", item.get("parentReference", {}).get("path"))
+              print("Name:", item.get("name"))
+              print("ID:", item.get("id"))
+              print("Path:", item.get("parentReference", {}).get("path"))
 
-              if item.get("name", "").lower() == "site_verification_powerbi_ready.xlsx":
+              if item.get("name", "").lower() == \
+                 "site_verification_powerbi_ready.xlsx":
                   target = item
 
           if target is None:
               print("")
-              print("ERROR: File dengan nama tepat tidak ditemukan.")
+              print("ERROR: Site_Verification_PowerBI_Ready.xlsx tidak ditemukan.")
               sys.exit(1)
 
-          item_id = target["id"]
+          with open("excel_item_id.txt", "w", encoding="utf-8") as f:
+              f.write(target["id"])
 
           print("")
           print("======================================")
-          print("TARGET FILE FOUND")
+          print("EXCEL FOUND")
           print("======================================")
-          print("Name:", target.get("name"))
-          print("ID  :", item_id)
-
-          with open("excel_item_id.txt", "w", encoding="utf-8") as f:
-              f.write(item_id)
-
-          print("======================================")
+          print("File:", target["name"])
+          print("ID  :", target["id"])
           PY
 
 
       # ============================================================
       # 5. DOWNLOAD EXCEL
       # ============================================================
-      - name: Download Excel from OneDrive
+      - name: Download Excel
+        env:
+          USER_OBJECT_ID: b9083e78-c261-47fd-8620-6323689b589c
+
         run: |
           set -e
 
-          USER="azzam.abdullah@pttmg.com"
           ITEM_ID=$(cat excel_item_id.txt)
 
-          echo "======================================"
-          echo "DOWNLOAD EXCEL"
-          echo "======================================"
-
-          echo "Item ID:"
-          echo "$ITEM_ID"
+          echo "Downloading Excel..."
+          echo "Item ID: $ITEM_ID"
 
           curl -L --fail --retry 3 \
             -H "Authorization: Bearer ${TOKEN}" \
-            "https://graph.microsoft.com/v1.0/users/${USER}/drive/items/${ITEM_ID}/content" \
+            "https://graph.microsoft.com/v1.0/users/${USER_OBJECT_ID}/drive/items/${ITEM_ID}/content" \
             -o source.xlsx
 
           echo ""
           echo "Download completed."
 
-          echo ""
-          echo "FILE INFORMATION:"
           ls -lh source.xlsx
-          file source.xlsx
 
 
       # ============================================================
-      # 6. INSTALL PYTHON
+      # 6. INSTALL PYTHON DEPENDENCY
       # ============================================================
       - name: Install Python dependency
         run: |
-          set -e
-
-          python --version
-
           python -m pip install --upgrade pip
-
           pip install openpyxl
 
 
       # ============================================================
-      # 7. GENERATE DASHBOARD DATA
+      # 7. GENERATE DATA.JS
       # ============================================================
       - name: Generate dashboard data
         run: |
           set -e
 
-          echo "======================================"
-          echo "GENERATE DASHBOARD DATA"
-          echo "======================================"
+          echo "Running sync_excel.py..."
 
           python sync_excel.py
 
@@ -271,15 +209,11 @@ jobs:
 
 
       # ============================================================
-      # 8. COMMIT UPDATED DATA
+      # 8. COMMIT DATA.JS
       # ============================================================
       - name: Commit updated data
         run: |
           set -e
-
-          echo "======================================"
-          echo "COMMIT UPDATED DATA"
-          echo "======================================"
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -293,6 +227,5 @@ jobs:
             git push
           fi
 
-          echo "======================================"
-          echo "SYNC COMPLETED"
-          echo "======================================"
+          echo ""
+          echo "SYNC COMPLETED SUCCESSFULLY"
