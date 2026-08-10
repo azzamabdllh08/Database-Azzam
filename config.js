@@ -1,9 +1,5 @@
-window.CONFIG = {
+const CONFIG = {
+  brand: "Asset & Project",
   title: "SITE VERIFICATION DASHBOARD",
-  subtitle: "CPP DONGGI & CPP MATINDOK",
-  onedriveUrl: "PASTE_LINK_ONEDRIVE_DI_SINI",
-  // Opsional: URL CSV publik yang bisa di-fetch browser.
-  // Jika kosong, dashboard memakai data.js.
-  csvUrl: "",
-  logoText: "Asset & Project"
+  source: "https://1drv.ms/f/c/8dd2c5d0a467a39a/IgClQm7larpfSrYb9XAppmjdAeWrJr2SSBR5mqEHbgOrSFk?e=fBhTIu"
 };
