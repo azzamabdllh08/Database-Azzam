@@ -27,9 +27,7 @@ jobs:
         run: |
           set -e
 
-          echo "========================================"
           echo "Getting Microsoft Graph access token..."
-          echo "========================================"
 
           TOKEN_RESPONSE=$(curl -sS --fail \
             -X POST \
@@ -44,24 +42,18 @@ jobs:
 
           echo "Access token obtained."
 
-          echo "========================================"
-          echo "Preparing OneDrive sharing URL..."
-          echo "========================================"
+          echo "Encoding OneDrive sharing URL..."
 
-          SHARE_ID=$(python -c "import base64,sys; u=sys.argv[1]; print('u!'+base64.urlsafe_b64encode(u.encode()).decode().rstrip('='))" "$ONEDRIVE_URL")
+          SHARE_ID=$(python -c "import base64,sys; print('u!'+base64.urlsafe_b64encode(sys.argv[1].encode()).decode().rstrip('='))" "$ONEDRIVE_URL")
 
-          echo "========================================"
           echo "Downloading Excel through Microsoft Graph..."
-          echo "========================================"
 
           curl -L --fail --retry 3 \
             -H "Authorization: Bearer ${TOKEN}" \
             "https://graph.microsoft.com/v1.0/shares/${SHARE_ID}/driveItem/content" \
             -o source.xlsx
 
-          echo "========================================"
           echo "Checking downloaded Excel..."
-          echo "========================================"
 
           file source.xlsx
           ls -lh source.xlsx
