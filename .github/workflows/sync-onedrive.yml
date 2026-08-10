@@ -13,33 +13,44 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Get Microsoft Graph access token
+      - name: Get Microsoft Graph token
         env:
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
         run: |
           set -e
 
-          echo "Getting Microsoft Graph access token..."
+          echo "Requesting Microsoft Graph token..."
 
-          TOKEN_RESPONSE=$(curl -sS --fail-with-body \
+          RESPONSE=$(curl -sS \
             -X POST \
-            "https://login.microsoftonline.com/${AZURE_TENANT_ID}/oauth2/v2.0/token" \
+            "https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token" \
             -H "Content-Type: application/x-www-form-urlencoded" \
-            --data-urlencode "client_id=${AZURE_CLIENT_ID}" \
-            --data-urlencode "client_secret=${AZURE_CLIENT_SECRET}" \
+            --data-urlencode "client_id=${CLIENT_ID}" \
+            --data-urlencode "client_secret=${CLIENT_SECRET}" \
             --data-urlencode "scope=https://graph.microsoft.com/.default" \
             --data-urlencode "grant_type=client_credentials")
 
-          TOKEN=$(python -c "import sys,json; print(json.load(sys.stdin)['access_token'])" <<< "$TOKEN_RESPONSE")
+          echo "$RESPONSE" | python -c "
+          import sys,json
+          data=json.load(sys.stdin)
+          if 'access_token' not in data:
+              print(data)
+              sys.exit(1)
+          print('Graph token successfully obtained.')
+          "
 
-          echo "Access token obtained."
+          TOKEN=$(echo "$RESPONSE" | python -c "
+          import sys,json
+          print(json.load(sys.stdin)['access_token'])
+          ")
 
-          echo "TOKEN=${TOKEN}" >> "$GITHUB_ENV"
+          echo "TOKEN=$TOKEN" >> "$GITHUB_ENV"
 
       - name: Encode OneDrive sharing URL
         env:
@@ -47,25 +58,37 @@ jobs:
         run: |
           set -e
 
-          SHARE_ID=$(python -c "import base64,os; u=os.environ['ONEDRIVE_URL']; print('u!'+base64.urlsafe_b64encode(u.encode()).decode().rstrip('='))")
+          SHARE_ID=$(python -c "
+          import base64
+          import os
 
-          echo "SHARE_ID=${SHARE_ID}" >> "$GITHUB_ENV"
+          url = os.environ['ONEDRIVE_URL']
 
-          echo "OneDrive sharing URL encoded."
+          encoded = base64.urlsafe_b64encode(
+              url.encode('utf-8')
+          ).decode('utf-8').rstrip('=')
 
-      - name: Download Excel from Microsoft Graph
+          print('u!' + encoded)
+          ")
+
+          echo "SHARE_ID=$SHARE_ID" >> "$GITHUB_ENV"
+
+          echo "Sharing URL encoded successfully."
+
+      - name: Download Excel through Microsoft Graph
         run: |
           set -e
 
-          echo "Downloading Excel..."
+          echo "Downloading Excel through Microsoft Graph..."
 
-          curl -L --fail-with-body --retry 3 \
+          curl -L \
+            --fail-with-body \
+            --retry 3 \
             -H "Authorization: Bearer ${TOKEN}" \
-            -H "Accept: application/json" \
             "https://graph.microsoft.com/v1.0/shares/${SHARE_ID}/driveItem/content" \
             -o source.xlsx
 
-          echo "Checking downloaded file..."
+          echo "Download completed."
 
           file source.xlsx
           ls -lh source.xlsx
