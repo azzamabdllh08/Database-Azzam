@@ -2,15 +2,6 @@ name: Sync Excel from OneDrive
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 */6 * * *"
-
-permissions:
-  contents: write
-
-concurrency:
-  group: sync-onedrive
-  cancel-in-progress: true
 
 jobs:
   sync:
@@ -18,30 +9,24 @@ jobs:
 
     steps:
 
-      # ==========================================
-      # 1. CHECKOUT REPOSITORY
-      # ==========================================
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-
-      # ==========================================
-      # 2. GET MICROSOFT GRAPH ACCESS TOKEN
-      # ==========================================
+      # ============================================================
+      # 1. GET MICROSOFT GRAPH TOKEN
+      # ============================================================
       - name: Get Microsoft Graph token
         env:
           CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+
         run: |
           set -e
 
           echo "Requesting Microsoft Graph token..."
 
-          RESPONSE=$(curl -sS --fail \
-            -X POST \
+          RESPONSE=$(curl -sS -X POST \
             "https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token" \
             -H "Content-Type: application/x-www-form-urlencoded" \
             --data-urlencode "client_id=${CLIENT_ID}" \
@@ -56,138 +41,121 @@ jobs:
             exit 1
           fi
 
-          echo "Microsoft Graph token obtained successfully."
-
           echo "TOKEN=$TOKEN" >> "$GITHUB_ENV"
 
+          echo "Microsoft Graph token obtained successfully."
 
-      # ==========================================
-      # 3. SEARCH EXCEL FILE IN ONEDRIVE
-      # ==========================================
+      # ============================================================
+      # 2. SEARCH EXCEL FILE
+      # ============================================================
       - name: Find Excel file in OneDrive
-        env:
-          TOKEN: ${{ env.TOKEN }}
         run: |
           set -e
 
+          USER="azzam.abdullah@pttmg.com"
           FILE_NAME="Site_Verification_PowerBI_Ready.xlsx"
 
-          echo "Searching for ${FILE_NAME}..."
+          echo "Searching OneDrive for:"
+          echo "$FILE_NAME"
 
-          RESPONSE=$(curl -sS --fail \
+          SEARCH_URL="https://graph.microsoft.com/v1.0/users/${USER}/drive/root/search(q='${FILE_NAME}')"
+
+          RESPONSE=$(curl -sS --fail-with-body \
             -H "Authorization: Bearer ${TOKEN}" \
-            "https://graph.microsoft.com/v1.0/users/azzam.abdullah%40pttmg.com/drive/root/search(q='${FILE_NAME}')")
+            "$SEARCH_URL")
 
-          echo "$RESPONSE" > search.json
+          echo "Search response received."
 
-          echo "Search completed."
+          echo "$RESPONSE" > search_result.json
 
-          ITEM_ID=$(python -c "
+          python - <<'PY'
           import json
+          import sys
 
-          data = json.load(open('search.json'))
+          with open("search_result.json", "r", encoding="utf-8") as f:
+              data = json.load(f)
 
-          items = [
-              item for item in data.get('value', [])
-              if item.get('name') == 'Site_Verification_PowerBI_Ready.xlsx'
-          ]
+          items = data.get("value", [])
 
-          if items:
-              print(items[0]['id'])
-          ")
+          if not items:
+              print("ERROR: Excel file tidak ditemukan di OneDrive.")
+              sys.exit(1)
 
-          if [ -z "$ITEM_ID" ]; then
-            echo "ERROR: File ${FILE_NAME} was not found in OneDrive."
-            echo ""
-            echo "Graph search response:"
-            cat search.json
-            exit 1
-          fi
+          target = None
 
-          echo "Excel file found."
-          echo "Item ID obtained."
+          for item in items:
+              name = item.get("name", "")
+              print("Found:", name)
 
-          echo "ITEM_ID=$ITEM_ID" >> "$GITHUB_ENV"
+              if name.lower() == "site_verification_powerbi_ready.xlsx":
+                  target = item
+                  break
 
+          if target is None:
+              print("ERROR: File dengan nama yang tepat tidak ditemukan.")
+              sys.exit(1)
 
-      # ==========================================
-      # 4. DOWNLOAD EXCEL USING ITEM ID
-      # ==========================================
+          item_id = target["id"]
+
+          print("Excel ditemukan.")
+          print("File name:", target.get("name"))
+          print("File ID:", item_id)
+
+          with open("excel_item_id.txt", "w", encoding="utf-8") as f:
+              f.write(item_id)
+          PY
+
+      # ============================================================
+      # 3. DOWNLOAD EXCEL
+      # ============================================================
       - name: Download Excel from OneDrive
-        env:
-          TOKEN: ${{ env.TOKEN }}
-          ITEM_ID: ${{ env.ITEM_ID }}
         run: |
           set -e
 
-          echo "Downloading Site_Verification_PowerBI_Ready.xlsx..."
+          USER="azzam.abdullah@pttmg.com"
+          ITEM_ID=$(cat excel_item_id.txt)
+
+          echo "Downloading Excel using Drive Item ID..."
 
           curl -L --fail --retry 3 \
             -H "Authorization: Bearer ${TOKEN}" \
-            "https://graph.microsoft.com/v1.0/users/azzam.abdullah%40pttmg.com/drive/items/${ITEM_ID}/content" \
+            "https://graph.microsoft.com/v1.0/users/${USER}/drive/items/${ITEM_ID}/content" \
             -o source.xlsx
 
           echo "Download completed."
 
-          if [ ! -f source.xlsx ]; then
-            echo "ERROR: source.xlsx was not created."
-            exit 1
-          fi
-
-          echo "Downloaded file:"
           ls -lh source.xlsx
 
+          file source.xlsx
 
-      # ==========================================
-      # 5. INSTALL PYTHON DEPENDENCY
-      # ==========================================
+      # ============================================================
+      # 4. INSTALL PYTHON DEPENDENCY
+      # ============================================================
       - name: Install Python dependency
         run: |
-          set -e
-
           python -m pip install --upgrade pip
           pip install openpyxl
 
-
-      # ==========================================
-      # 6. GENERATE DASHBOARD DATA
-      # ==========================================
+      # ============================================================
+      # 5. GENERATE DASHBOARD DATA
+      # ============================================================
       - name: Generate dashboard data
         run: |
-          set -e
-
-          echo "Running sync_excel.py..."
-
           python sync_excel.py
 
-          echo "Dashboard data generated."
-
-          if [ ! -f data.js ]; then
-            echo "ERROR: data.js was not generated."
-            exit 1
-          fi
-
-          ls -lh data.js
-
-
-      # ==========================================
-      # 7. COMMIT UPDATED DATA
-      # ==========================================
+      # ============================================================
+      # 6. COMMIT UPDATED DATA
+      # ============================================================
       - name: Commit updated data
         run: |
-          set -e
-
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add data.js
 
           if git diff --cached --quiet; then
-            echo "No changes detected in data.js."
+            echo "No changes detected."
           else
-            echo "Changes detected."
-
             git commit -m "Update dashboard data"
-
             git push
           fi
