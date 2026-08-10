@@ -22,12 +22,15 @@ jobs:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+
           ONEDRIVE_URL: "https://1drv.ms/x/c/8dd2c5d0a467a39a/IQBvKUJCpgGTT4rvYLy4Gt9FAbedI0g-V_jUTXwlA3QXwNI?e=fXkoQM"
 
         run: |
           set -e
 
+          echo "======================================"
           echo "Getting Microsoft Graph access token..."
+          echo "======================================"
 
           TOKEN_RESPONSE=$(curl -sS --fail \
             -X POST \
@@ -42,18 +45,24 @@ jobs:
 
           echo "Access token obtained."
 
+          echo "======================================"
           echo "Encoding OneDrive sharing URL..."
+          echo "======================================"
 
-          SHARE_ID=$(python -c "import base64,sys; print('u!'+base64.urlsafe_b64encode(sys.argv[1].encode()).decode().rstrip('='))" "$ONEDRIVE_URL")
+          SHARE_ID=$(python -c "import base64,sys; u=sys.argv[1]; print('u!'+base64.urlsafe_b64encode(u.encode()).decode().rstrip('='))" "$ONEDRIVE_URL")
 
+          echo "======================================"
           echo "Downloading Excel through Microsoft Graph..."
+          echo "======================================"
 
           curl -L --fail --retry 3 \
             -H "Authorization: Bearer ${TOKEN}" \
             "https://graph.microsoft.com/v1.0/shares/${SHARE_ID}/driveItem/content" \
             -o source.xlsx
 
+          echo "======================================"
           echo "Checking downloaded Excel..."
+          echo "======================================"
 
           file source.xlsx
           ls -lh source.xlsx
