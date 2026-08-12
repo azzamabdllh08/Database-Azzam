@@ -2,6 +2,15 @@ name: Sync RBI Database
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'rbi/index.html'
+      - 'rbi/app.js'
+      - 'rbi/style.css'
+      - 'rbi/config.js'
+      - 'rbi/sync_rbi.py'
+      - '.github/workflows/sync-rbi.yml'
   schedule:
     - cron: "0 */3 * * *"
 
